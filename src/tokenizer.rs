@@ -2,15 +2,33 @@ use core::str;
 // This is going to by my tokenizer
 use log::{debug, info};
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
 
-pub fn bpe(input_str: &str, n_merges: u32) -> (Vec<((u16, u16), u16)>, HashMap<u16, Vec<u8>>) {
-    let mut next_count: u16 = 256;
+pub fn bpe_on_str(
+    input_str: &str,
+    n_merges: u32,
+) -> (Vec<((u16, u16), u16)>, HashMap<u16, Vec<u8>>) {
+    let encoded: Vec<u8> = input_str.bytes().collect();
+    bpe(encoded, n_merges)
+}
 
-    let mut encoded: Vec<u16> = input_str
-        .bytes()
-        .map(|val: u8| -> u16 { val as u16 })
-        .collect();
-    debug!("{:?}", encoded);
+pub fn bpe_on_file(
+    input_file: &str,
+    n_merges: u32,
+) -> (Vec<((u16, u16), u16)>, HashMap<u16, Vec<u8>>) {
+    info!("Starting BPE algorithm on {input_file}");
+    let mut f = File::open(input_file).unwrap();
+
+    let mut buffer = Vec::new();
+    // read the whole file
+    f.read_to_end(&mut buffer).unwrap();
+    bpe(buffer, n_merges)
+}
+
+pub fn bpe(input_bytes: Vec<u8>, n_merges: u32) -> (Vec<((u16, u16), u16)>, HashMap<u16, Vec<u8>>) {
+    let mut next_count: u16 = u8::MAX as u16 + 1;
+    let mut encoded: Vec<u16> = input_bytes.iter().map(|v| *v as u16).collect();
 
     let mut merges: Vec<((u16, u16), u16)> = Vec::new();
     let mut vocab: HashMap<u16, Vec<u8>> = HashMap::new();

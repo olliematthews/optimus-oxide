@@ -1,12 +1,19 @@
 use core::str;
 // This is going to by my tokenizer
-use std::collections::HashMap;
-use std::env;
-use std::fs;
-use transformer_oxide::tokenizer::{bpe, decode, encode};
+use env_logger;
+use log::info;
+use transformer_oxide::tokenizer::bpe_on_file;
 
 fn main() {
-    let input_str = "Hi hi, hello silly eggs and sausages and pickle and kettle chips yahooo what a large elephant";
-    let (merges, vocab) = bpe(input_str, 10);
-    print!("{}", decode(encode(input_str, merges), vocab));
+    env_logger::init();
+    let (_, vocab) = bpe_on_file("./data/botchan.txt", 200);
+
+    let mut vocab_words: Vec<String> = vocab
+        .values()
+        .flat_map(|vocab_bytes| str::from_utf8(&vocab_bytes).ok())
+        .map(|val| val.to_owned())
+        .collect();
+    vocab_words.sort_by(|slf, other| slf.len().partial_cmp(&other.len()).unwrap());
+
+    info!("{:?}", &vocab_words[..10]);
 }
