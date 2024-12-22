@@ -4,6 +4,7 @@ use log::{debug, info};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
+use tqdm::tqdm;
 
 pub fn bpe_on_str(
     input_str: &str,
@@ -35,7 +36,7 @@ pub fn bpe(input_bytes: Vec<u8>, n_merges: u32) -> (Vec<((u16, u16), u16)>, Hash
 
     let start_len = encoded.len();
 
-    for merge in 0..n_merges {
+    for merge in tqdm(0..n_merges) {
         // Find the most commonly occuring pair
         let mut pairs: HashMap<(u16, u16), u32> = HashMap::new();
         let mut best_pair: Option<((u16, u16), u32)> = None;
