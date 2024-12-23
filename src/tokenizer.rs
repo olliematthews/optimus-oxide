@@ -1,5 +1,7 @@
 use core::str;
 // This is going to by my tokenizer
+use crate::exceptions::TokenizerError;
+use anyhow::Result;
 use log::info;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -9,7 +11,7 @@ use tqdm;
 pub fn bpe_on_str(
     input_str: &str,
     n_merges: u32,
-) -> (Vec<((u16, u16), u16)>, HashMap<u16, Vec<u8>>) {
+) -> Result<(Vec<((u16, u16), u16)>, HashMap<u16, Vec<u8>>)> {
     let encoded: Vec<u8> = input_str.bytes().collect();
     bpe(encoded, n_merges)
 }
@@ -17,17 +19,20 @@ pub fn bpe_on_str(
 pub fn bpe_on_file(
     input_file: &str,
     n_merges: u32,
-) -> (Vec<((u16, u16), u16)>, HashMap<u16, Vec<u8>>) {
+) -> Result<(Vec<((u16, u16), u16)>, HashMap<u16, Vec<u8>>)> {
     info!("Starting BPE algorithm on {input_file}");
-    let mut f = File::open(input_file).unwrap();
+    let mut f = File::open(input_file)?;
 
     let mut buffer = Vec::new();
     // read the whole file
-    f.read_to_end(&mut buffer).unwrap();
+    f.read_to_end(&mut buffer)?;
     bpe(buffer, n_merges)
 }
 
-pub fn bpe(input_bytes: Vec<u8>, n_merges: u32) -> (Vec<((u16, u16), u16)>, HashMap<u16, Vec<u8>>) {
+pub fn bpe(
+    input_bytes: Vec<u8>,
+    n_merges: u32,
+) -> Result<(Vec<((u16, u16), u16)>, HashMap<u16, Vec<u8>>)> {
     let mut next_count: u16 = u8::MAX as u16 + 1;
     let mut encoded: Vec<u16> = input_bytes.iter().map(|v| *v as u16).collect();
 
@@ -101,15 +106,15 @@ pub fn bpe(input_bytes: Vec<u8>, n_merges: u32) -> (Vec<((u16, u16), u16)>, Hash
                 }
             }
             merge_iter += 1;
-            pbar.update(1).unwrap();
+            pbar.update(1)?;
         }
     }
     let compression = (start_len - encoded.len()) / start_len;
     info!("Compression of tokens by: {compression:.2}%");
-    (merges, vocab)
+    Ok((merges, vocab))
 }
 
-pub fn encode(input_str: &str, merges: Vec<((u16, u16), u16)>) -> Vec<u16> {
+pub fn encode(input_str: &str, merges: Vec<((u16, u16), u16)>) -> Result<Vec<u16>> {
     let mut encoded: Vec<u16> = input_str
         .bytes()
         .map(|val: u8| -> u16 { val as u16 })
@@ -127,21 +132,27 @@ pub fn encode(input_str: &str, merges: Vec<((u16, u16), u16)>) -> Vec<u16> {
         }
     }
 
-    encoded
+    Ok(encoded)
 }
 
-pub fn decode(encoded: Vec<u16>, vocab: HashMap<u16, Vec<u8>>) -> String {
+pub fn decode(encoded: Vec<u16>, vocab: HashMap<u16, Vec<u8>>) -> Result<String> {
     let decoded: Vec<u8> = encoded
         .iter()
-        .flat_map(|element| {
+        .map(|element| {
             if *element > 255 {
-                vocab[element].clone()
+                Ok(vocab
+                    .get(element)
+                    .ok_or(TokenizerError::UnrecognizedToken(*element))?
+                    .clone())
             } else {
-                vec![*element as u8]
+                Ok(vec![*element as u8])
             }
         })
+        .collect::<Result<Vec<Vec<u8>>>>()?
+        .drain(..)
+        .flatten()
         .collect();
-    str::from_utf8(&decoded).unwrap().to_owned()
+    Ok(str::from_utf8(&decoded)?.to_owned())
 }
 
 #[cfg(test)]

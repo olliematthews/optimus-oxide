@@ -13,7 +13,7 @@ mod tests {
             input_str.push_str(target_word);
             input_str.push(char);
         }
-        let (_, vocab) = bpe_on_str(&input_str, (target_word.len() - 2) as u32);
+        let (_, vocab) = bpe_on_str(&input_str, (target_word.len() - 2) as u32).unwrap();
 
         let vocab_words: HashSet<String> = vocab
             .values()
@@ -27,7 +27,10 @@ mod tests {
     #[test]
     fn test_roudtrip() {
         let input_str = "Hi hi, hello silly eggs and sausages and pickle and kettle chips yahooo what a large elephant";
-        let (merges, vocab) = bpe_on_str(input_str, 10);
-        assert_eq!(input_str, decode(encode(input_str, merges), vocab));
+        let (merges, vocab) = bpe_on_str(input_str, 10).unwrap();
+        assert_eq!(
+            input_str,
+            decode(encode(input_str, merges).unwrap(), vocab).unwrap()
+        );
     }
 }
