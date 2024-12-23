@@ -2,7 +2,7 @@ use core::str;
 // This is going to by my tokenizer
 use env_logger;
 use log::info;
-use transformer_oxide::tokenizer::bpe_on_file;
+use transformer_oxide::tokenizer::tokenizer::bpe_on_file;
 
 fn main() {
     env_logger::init();

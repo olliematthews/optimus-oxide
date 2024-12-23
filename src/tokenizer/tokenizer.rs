@@ -1,6 +1,7 @@
 use core::str;
 // This is going to by my tokenizer
 use crate::exceptions::TokenizerError;
+use crate::tokenizer::utils::to_word_tokens;
 use anyhow::Result;
 use log::info;
 use std::collections::{HashMap, HashSet};
@@ -38,27 +39,7 @@ pub fn bpe(
     // Split the input string by the split byte. This makes the algorithm run much faster, but means that you cannot have multi-word tokens.
     let split_byte: u8 = ' ' as u8;
 
-    let mut words: HashMap<Vec<u16>, u32> = HashMap::new();
-    let mut current_word: Vec<u16> = Vec::new();
-
-    for input_byte in input_bytes {
-        if input_byte == split_byte && current_word.len() > 0 {
-            if words.contains_key(&current_word) {
-                *words.get_mut(&current_word).unwrap() += 1;
-            } else {
-                words.insert(current_word, 1);
-            }
-            current_word = Vec::new();
-        }
-        current_word.push(input_byte as u16);
-    }
-    if current_word.len() > 0 {
-        if words.contains_key(&current_word) {
-            *words.get_mut(&current_word).unwrap() += 1;
-        } else {
-            words.insert(current_word, 1);
-        }
-    }
+    let mut words: HashMap<Vec<u16>, u32> = to_word_tokens(input_bytes, split_byte);
 
     let mut next_count: u16 = u8::MAX as u16 + 1;
 
@@ -195,5 +176,5 @@ pub fn decode(encoded: Vec<u16>, vocab: HashMap<u16, Vec<u8>>) -> Result<String>
 }
 
 #[cfg(test)]
-#[path = "./unit_tests/tokenizer_tests.rs"]
+#[path = "./tokenizer_tests.rs"]
 mod tokenizer_tests;
