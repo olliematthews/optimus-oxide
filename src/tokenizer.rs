@@ -33,13 +33,37 @@ pub fn bpe(
     input_bytes: Vec<u8>,
     n_merges: u32,
 ) -> Result<(Vec<((u16, u16), u16)>, HashMap<u16, Vec<u8>>)> {
+    let start_len = input_bytes.len();
+
+    // Split the input string by the split byte. This makes the algorithm run much faster, but means that you cannot have multi-word tokens.
+    let split_byte: u8 = ' ' as u8;
+
+    let mut words: HashMap<Vec<u16>, u32> = HashMap::new();
+    let mut current_word: Vec<u16> = Vec::new();
+
+    for input_byte in input_bytes {
+        if input_byte == split_byte && current_word.len() > 0 {
+            if words.contains_key(&current_word) {
+                *words.get_mut(&current_word).unwrap() += 1;
+            } else {
+                words.insert(current_word, 1);
+            }
+            current_word = Vec::new();
+        }
+        current_word.push(input_byte as u16);
+    }
+    if current_word.len() > 0 {
+        if words.contains_key(&current_word) {
+            *words.get_mut(&current_word).unwrap() += 1;
+        } else {
+            words.insert(current_word, 1);
+        }
+    }
+
     let mut next_count: u16 = u8::MAX as u16 + 1;
-    let mut encoded: Vec<u16> = input_bytes.iter().map(|v| *v as u16).collect();
 
     let mut merges: Vec<((u16, u16), u16)> = Vec::new();
     let mut vocab: HashMap<u16, Vec<u8>> = HashMap::new();
-
-    let start_len = encoded.len();
 
     let mut merge_iter = 0;
     let mut pbar = tqdm::pbar(Some(n_merges as usize));
@@ -48,19 +72,23 @@ pub fn bpe(
         let mut pairs: HashMap<(u16, u16), u32> = HashMap::new();
         let mut best_pairs: Vec<(u16, u16)> = Vec::new();
         let mut best_pair_n_matches: u32 = 1;
-        for i in 0..encoded.len() - 1 {
-            let key = (encoded[i], encoded[i + 1]);
-            if let Some(value) = pairs.get_mut(&key) {
-                *value += 1;
-                if *value >= best_pair_n_matches {
-                    if *value > best_pair_n_matches {
-                        best_pairs.clear();
-                        best_pair_n_matches = *value;
+        // let mut words_by_token_occrance: HashMap<u16, Vec<&Vec<(u16, u16)>>> = HashMap::new();
+        for (tokens, n_occurances) in words.iter() {
+            // words_by_token_occrance.
+            for i in 0..tokens.len() - 1 {
+                let key = (tokens[i], tokens[i + 1]);
+                if let Some(value) = pairs.get_mut(&key) {
+                    *value += *n_occurances;
+                    if *value >= best_pair_n_matches {
+                        if *value > best_pair_n_matches {
+                            best_pairs.clear();
+                            best_pair_n_matches = *value;
+                        }
+                        best_pairs.push(key);
                     }
-                    best_pairs.push(key);
+                } else {
+                    pairs.insert(key, *n_occurances);
                 }
-            } else {
-                pairs.insert(key, 1);
             }
         }
         let mut merged_tokens: HashSet<u16> = HashSet::new(); // Keep track of what you have merged already
@@ -97,19 +125,30 @@ pub fn bpe(
 
             // And apply the merge...
             let mut i: usize = 0;
-            while i < (encoded.len() - 1) {
-                if (encoded[i], encoded[i + 1]) == merge_from {
-                    encoded[i] = merge_to;
-                    encoded.remove(i + 1);
-                } else {
-                    i += 1;
-                }
-            }
+            words = words
+                .drain()
+                .map(|(mut tokens, n_occurances)| {
+                    while i < (tokens.len() - 1) {
+                        if (tokens[i], tokens[i + 1]) == merge_from {
+                            tokens[i] = merge_to;
+                            tokens.remove(i + 1);
+                        } else {
+                            i += 1;
+                        }
+                    }
+                    (tokens, n_occurances)
+                })
+                .collect();
             merge_iter += 1;
             pbar.update(1)?;
         }
     }
-    let compression = (start_len - encoded.len()) / start_len;
+    let compression = (start_len
+        - words
+            .iter()
+            .map(|(tokens, n_occurances)| tokens.len() * (*n_occurances as usize))
+            .sum::<usize>())
+        / start_len;
     info!("Compression of tokens by: {compression:.2}%");
     Ok((merges, vocab))
 }

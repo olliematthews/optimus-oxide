@@ -6,7 +6,7 @@ use transformer_oxide::tokenizer::bpe_on_file;
 
 fn main() {
     env_logger::init();
-    let (_, vocab) = bpe_on_file("./data/botchan.txt", 200);
+    let (_, vocab) = bpe_on_file("./data/botchan.txt", 200).unwrap();
 
     let mut vocab_words: Vec<String> = vocab
         .values()
