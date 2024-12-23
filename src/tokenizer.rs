@@ -1,10 +1,10 @@
 use core::str;
 // This is going to by my tokenizer
-use log::{debug, info};
-use std::collections::HashMap;
+use log::info;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Read;
-use tqdm::tqdm;
+use tqdm;
 
 pub fn bpe_on_str(
     input_str: &str,
@@ -36,59 +36,73 @@ pub fn bpe(input_bytes: Vec<u8>, n_merges: u32) -> (Vec<((u16, u16), u16)>, Hash
 
     let start_len = encoded.len();
 
-    for merge in tqdm(0..n_merges) {
+    let mut merge_iter = 0;
+    let mut pbar = tqdm::pbar(Some(n_merges as usize));
+    while merge_iter < n_merges {
         // Find the most commonly occuring pair
         let mut pairs: HashMap<(u16, u16), u32> = HashMap::new();
-        let mut best_pair: Option<((u16, u16), u32)> = None;
+        let mut best_pairs: Vec<(u16, u16)> = Vec::new();
+        let mut best_pair_n_matches: u32 = 1;
         for i in 0..encoded.len() - 1 {
             let key = (encoded[i], encoded[i + 1]);
             if let Some(value) = pairs.get_mut(&key) {
                 *value += 1;
-                if let Some(bp) = best_pair {
-                    if *value > bp.1 {
-                        best_pair = Some((key, *value));
+                if *value >= best_pair_n_matches {
+                    if *value > best_pair_n_matches {
+                        best_pairs.clear();
+                        best_pair_n_matches = *value;
                     }
-                } else {
-                    best_pair = Some((key, *value));
+                    best_pairs.push(key);
                 }
             } else {
                 pairs.insert(key, 1);
             }
         }
-
-        let merge_from = best_pair.unwrap().0;
-        let merge_to = next_count;
-        next_count += 1;
-
-        // Now add the merge in
-        merges.push((merge_from, merge_to));
-
-        // And add the vocab entry in
-        let mut reverse_map: Vec<u8> = Vec::new();
-        if let Some(submap) = vocab.get(&merge_from.0) {
-            reverse_map.extend(submap);
-        } else {
-            reverse_map.push(merge_from.0 as u8)
-        }
-        if let Some(submap) = vocab.get(&merge_from.1) {
-            reverse_map.extend(submap);
-        } else {
-            reverse_map.push(merge_from.1 as u8)
-        }
-
-        vocab.insert(merge_to, reverse_map);
-
-        // And apply the merge...
-        let mut i: usize = 0;
-        while i < (encoded.len() - 1) {
-            if (encoded[i], encoded[i + 1]) == merge_from {
-                encoded[i] = merge_to;
-                encoded.remove(i + 1);
-            } else {
-                i += 1;
+        let mut merged_tokens: HashSet<u16> = HashSet::new(); // Keep track of what you have merged already
+        for merge_from in best_pairs {
+            // Make sure not to try and merge a pair which includes any tokens which have already been merged
+            if merge_iter >= n_merges {
+                break;
             }
+            if merged_tokens.contains(&merge_from.0) || merged_tokens.contains(&merge_from.1) {
+                continue;
+            }
+            merged_tokens.insert(merge_from.0);
+            merged_tokens.insert(merge_from.1);
+            let merge_to = next_count;
+            next_count += 1;
+
+            // Now add the merge in
+            merges.push((merge_from, merge_to));
+
+            // And add the vocab entry in
+            let mut reverse_map: Vec<u8> = Vec::new();
+            if let Some(submap) = vocab.get(&merge_from.0) {
+                reverse_map.extend(submap);
+            } else {
+                reverse_map.push(merge_from.0 as u8)
+            }
+            if let Some(submap) = vocab.get(&merge_from.1) {
+                reverse_map.extend(submap);
+            } else {
+                reverse_map.push(merge_from.1 as u8)
+            }
+
+            vocab.insert(merge_to, reverse_map);
+
+            // And apply the merge...
+            let mut i: usize = 0;
+            while i < (encoded.len() - 1) {
+                if (encoded[i], encoded[i + 1]) == merge_from {
+                    encoded[i] = merge_to;
+                    encoded.remove(i + 1);
+                } else {
+                    i += 1;
+                }
+            }
+            merge_iter += 1;
+            pbar.update(1).unwrap();
         }
-        debug!("MERGE: {}. Len: {}", merge, encoded.len());
     }
     let compression = (start_len - encoded.len()) / start_len;
     info!("Compression of tokens by: {compression:.2}%");
