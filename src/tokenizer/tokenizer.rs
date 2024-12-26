@@ -3,7 +3,7 @@ use core::str;
 use crate::exceptions::TokenizerError;
 use crate::tokenizer::utils::to_word_tokens;
 use anyhow::Result;
-use log::info;
+use log::{debug, info};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Read;
@@ -39,7 +39,7 @@ pub fn bpe(
     // Split the input string by the split byte. This makes the algorithm run much faster, but means that you cannot have multi-word tokens.
     let split_byte: u8 = ' ' as u8;
 
-    let mut words: HashMap<Vec<u16>, u32> = to_word_tokens(input_bytes, split_byte);
+    let mut words: Vec<(Vec<u16>, u32)> = to_word_tokens(input_bytes, split_byte);
 
     let mut next_count: u16 = u8::MAX as u16 + 1;
 
@@ -48,78 +48,226 @@ pub fn bpe(
 
     let mut merge_iter = 0;
     let mut pbar = tqdm::pbar(Some(n_merges as usize));
-    while merge_iter < n_merges {
-        // Find the most commonly occuring pair
-        let mut pairs: HashMap<(u16, u16), u32> = HashMap::new();
-        let mut best_pairs: Vec<(u16, u16)> = Vec::new();
-        let mut best_pair_n_matches: u32 = 1;
-        // let mut words_by_token_occrance: HashMap<u16, Vec<&Vec<(u16, u16)>>> = HashMap::new();
-        for (tokens, n_occurances) in words.iter() {
-            // words_by_token_occrance.
-            for i in 0..tokens.len() - 1 {
-                let key = (tokens[i], tokens[i + 1]);
-                if let Some(value) = pairs.get_mut(&key) {
-                    *value += *n_occurances;
-                    if *value >= best_pair_n_matches {
-                        if *value > best_pair_n_matches {
-                            best_pairs.clear();
-                            best_pair_n_matches = *value;
-                        }
-                        best_pairs.push(key);
-                    }
-                } else {
-                    pairs.insert(key, *n_occurances);
-                }
+
+    // Find the most commonly occurring pair
+    let mut pairs: HashMap<(u16, u16), u32> = HashMap::new();
+    let mut words_by_pair_occurrance: HashMap<(u16, u16), HashSet<usize>> = HashMap::new();
+
+    for (word_index, (tokens, n_occurrances)) in words.iter().enumerate() {
+        for i in 0..tokens.len() - 1 {
+            let pair = (tokens[i], tokens[i + 1]);
+            if let Some(value) = pairs.get_mut(&pair) {
+                *value += *n_occurrances;
+            } else {
+                pairs.insert(pair, *n_occurrances);
+            }
+
+            if let Some(word_list) = words_by_pair_occurrance.get_mut(&pair) {
+                word_list.insert(word_index);
+            } else {
+                debug!("INSERTED into WBP: {:?}", pair.clone());
+                words_by_pair_occurrance.insert(pair, HashSet::from([word_index]));
             }
         }
+    }
+
+    while merge_iter < n_merges {
         let mut merged_tokens: HashSet<u16> = HashSet::new(); // Keep track of what you have merged already
-        for merge_from in best_pairs {
+
+        // Get the best pairs
+        // TODO: do this with a more optimal pair structure
+        let mut best_pairs: Vec<(u16, u16)> = Vec::new();
+        let mut best_pair_n_matches: u32 = 1;
+        for (pair, n_occurrances) in &pairs {
+            if *n_occurrances >= best_pair_n_matches {
+                if *n_occurrances > best_pair_n_matches {
+                    best_pairs.clear();
+                    best_pair_n_matches = *n_occurrances;
+                }
+                best_pairs.push(pair.clone());
+            }
+        }
+
+        for merge_from_pair in best_pairs {
             // Make sure not to try and merge a pair which includes any tokens which have already been merged
             if merge_iter >= n_merges {
                 break;
             }
-            if merged_tokens.contains(&merge_from.0) || merged_tokens.contains(&merge_from.1) {
+            if merged_tokens.contains(&merge_from_pair.0)
+                || merged_tokens.contains(&merge_from_pair.1)
+            {
                 continue;
             }
-            merged_tokens.insert(merge_from.0);
-            merged_tokens.insert(merge_from.1);
+            merged_tokens.insert(merge_from_pair.0);
+            merged_tokens.insert(merge_from_pair.1);
             let merge_to = next_count;
             next_count += 1;
 
             // Now add the merge in
-            merges.push((merge_from, merge_to));
+            merges.push((merge_from_pair, merge_to));
 
             // And add the vocab entry in
             let mut reverse_map: Vec<u8> = Vec::new();
-            if let Some(submap) = vocab.get(&merge_from.0) {
+            if let Some(submap) = vocab.get(&merge_from_pair.0) {
                 reverse_map.extend(submap);
             } else {
-                reverse_map.push(merge_from.0 as u8)
+                reverse_map.push(merge_from_pair.0 as u8)
             }
-            if let Some(submap) = vocab.get(&merge_from.1) {
+            if let Some(submap) = vocab.get(&merge_from_pair.1) {
                 reverse_map.extend(submap);
             } else {
-                reverse_map.push(merge_from.1 as u8)
+                reverse_map.push(merge_from_pair.1 as u8)
             }
 
             vocab.insert(merge_to, reverse_map);
 
             // And apply the merge...
-            let mut i: usize = 0;
-            words = words
-                .drain()
-                .map(|(mut tokens, n_occurances)| {
-                    while i < (tokens.len() - 1) {
-                        if (tokens[i], tokens[i + 1]) == merge_from {
-                            tokens[i] = merge_to;
-                            tokens.remove(i + 1);
-                        } else {
-                            i += 1;
+            debug!("REMOVING from WBP: {:?}", merge_from_pair.clone());
+            let words_to_merge =
+                words_by_pair_occurrance
+                    .remove(&merge_from_pair)
+                    .expect(&format!(
+                        "This should be in the words_by_pair {merge_from_pair:?}"
+                    ));
+            for word_index in words_to_merge {
+                debug! {"Replacing {:?} with {:?}", merge_from_pair, merge_to};
+                let (ref mut tokens, word_occurrances) = words
+                    .get_mut(word_index)
+                    .expect("All word indexes should be valid.");
+                debug! {"Tokens are: {:?}", tokens};
+
+                // First, update the tokens for that word
+                let mut word_pair_occurances: HashMap<(u16, u16), u32> = HashMap::new();
+                let mut i: usize = 0;
+                while i < (tokens.len() - 1) {
+                    let pair = (tokens[i], tokens[i + 1]);
+                    if pair == merge_from_pair {
+                        tokens[i] = merge_to;
+                        tokens.remove(i + 1);
+                        debug! {"Tokens after remove are: {:?}", tokens};
+
+                        // Add in the new next pair if there is one
+                        if i < tokens.len() - 1 {
+                            let new_pair = (merge_to, tokens[i + 1]);
+
+                            // Add the new pair to the set of pairs
+                            if let Some(pair_occurrances) = pairs.get_mut(&new_pair) {
+                                *pair_occurrances += *word_occurrances;
+                            } else {
+                                pairs.insert(new_pair, *word_occurrances);
+                            }
+                            // ...and into the word occurances
+                            if let Some(pair_occurrances) = word_pair_occurances.get_mut(&new_pair)
+                            {
+                                *pair_occurrances += 1;
+                            } else {
+                                word_pair_occurances.insert(new_pair, 1);
+                            }
+                            // ... and into the words_by_pair
+                            if let Some(words) = words_by_pair_occurrance.get_mut(&new_pair) {
+                                words.insert(word_index);
+                            } else {
+                                words_by_pair_occurrance
+                                    .insert(new_pair.clone(), HashSet::from([word_index]));
+                            }
+
+                            // Now consider the pair we just replaced behind
+                            let replaced_pair = (pair.1, tokens[i + 1]);
+                            debug!(
+                                "Removing pair {:?} which occurs {:?} times",
+                                replaced_pair,
+                                pairs.get(&replaced_pair).unwrap()
+                            );
+
+                            // Reduce the count on the pair
+                            *(pairs
+                                .get_mut(&replaced_pair)
+                                .expect("This pair must be in there")) -= 1;
+                            // Inidicate that an instance of the pair has been removed
+                            if !word_pair_occurances.contains_key(&replaced_pair) {
+                                // Use this to indicate later that this pair should be removed
+                                word_pair_occurances.insert(replaced_pair.clone(), 0);
+                            }
+                            debug!(
+                                "Added in new pair: {:?} count is now: {:?}. WOK is {}",
+                                new_pair.clone(),
+                                pairs.get(&new_pair),
+                                word_occurrances.clone()
+                            );
                         }
+                        // Add in the new previous pair if there is one
+                        if i > 0 {
+                            let new_pair = (tokens[i - 1], merge_to);
+
+                            // Add the new pair into the global pairs
+                            if let Some(pair_occurrances) = pairs.get_mut(&new_pair) {
+                                *pair_occurrances += *word_occurrances;
+                            } else {
+                                pairs.insert(new_pair, *word_occurrances);
+                            }
+                            // ...and into the word occurances
+                            if let Some(pair_occurrances) = word_pair_occurances.get_mut(&new_pair)
+                            {
+                                *pair_occurrances += 1;
+                            } else {
+                                word_pair_occurances.insert(new_pair, 1);
+                            }
+                            // ... and into the words_by_pair
+                            if let Some(words) = words_by_pair_occurrance.get_mut(&new_pair) {
+                                words.insert(word_index);
+                            } else {
+                                words_by_pair_occurrance
+                                    .insert(new_pair.clone(), HashSet::from([word_index]));
+                            }
+
+                            // Consider the replaced pair
+                            let replaced_pair = (tokens[i - 1], pair.0);
+                            // debug!(
+                            //     "Removing pair {:?} which occurs {:?} times",
+                            //     replaced_pair, pairs[&replaced_pair]
+                            // );
+                            // Decrement the count
+                            *(pairs.get_mut(&replaced_pair).expect(&format!(
+                                "This pair must be in there: {replaced_pair:?}"
+                            ))) -= 1;
+
+                            // Reduce the occurrance count in this word
+                            if let Some(pair_occurances) =
+                                word_pair_occurances.get_mut(&replaced_pair)
+                            {
+                                *pair_occurances -= 1;
+                            } else {
+                                word_pair_occurances.insert(replaced_pair, 0);
+                            }
+
+                            debug!(
+                                "Added in new pair: {:?} count is now: {:?}. WOK is {}",
+                                new_pair.clone(),
+                                pairs.get(&new_pair),
+                                word_occurrances.clone()
+                            );
+                        }
+                    } else {
+                        if let Some(pair_occurrances) = word_pair_occurances.get_mut(&pair) {
+                            *pair_occurrances += 1;
+                        } else {
+                            word_pair_occurances.insert(pair, 1);
+                        }
+                        i += 1;
                     }
-                    (tokens, n_occurances)
-                })
-                .collect();
+                }
+                // Make sure to account for any removed pairs in our words_by_pair_occurrances mapping
+                for (pair, n_occurrances) in word_pair_occurances {
+                    if n_occurrances == 0 {
+                        debug! {"Removing word {word_index} from pair: {:?}", pair.clone()};
+                        words_by_pair_occurrance
+                            .get_mut(&pair)
+                            .expect("We expect this to be in there before removal")
+                            .remove(&word_index);
+                    }
+                }
+            }
+            pairs.remove(&merge_from_pair);
             merge_iter += 1;
             pbar.update(1)?;
         }
@@ -127,7 +275,7 @@ pub fn bpe(
     let compression = (start_len
         - words
             .iter()
-            .map(|(tokens, n_occurances)| tokens.len() * (*n_occurances as usize))
+            .map(|(tokens, n_occurrances)| tokens.len() * (*n_occurrances as usize))
             .sum::<usize>())
         / start_len;
     info!("Compression of tokens by: {compression:.2}%");

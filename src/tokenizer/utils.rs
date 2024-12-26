@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
-pub fn to_word_tokens(input_bytes: Vec<u8>, split_byte: u8) -> HashMap<Vec<u16>, u32> {
+pub fn to_word_tokens(input_bytes: Vec<u8>, split_byte: u8) -> Vec<(Vec<u16>, u32)> {
     let mut words: HashMap<Vec<u16>, u32> = HashMap::new();
     let mut current_word: Vec<u16> = Vec::new();
 
     for input_byte in input_bytes {
         if input_byte == split_byte && current_word.len() > 0 {
-            if words.contains_key(&current_word) {
-                *words.get_mut(&current_word).unwrap() += 1;
+            if let Some(n_occurances) = words.get_mut(&current_word) {
+                *n_occurances += 1;
             } else {
                 words.insert(current_word, 1);
             }
@@ -22,7 +22,7 @@ pub fn to_word_tokens(input_bytes: Vec<u8>, split_byte: u8) -> HashMap<Vec<u16>,
             words.insert(current_word, 1);
         }
     }
-    words
+    words.drain().collect()
 }
 
 #[cfg(test)]
@@ -40,8 +40,7 @@ mod tests {
         let input_str = input_to_repeat.repeat(n_repeats as usize);
         let word_tokens = to_word_tokens(input_str.bytes().collect(), split_byte);
         assert_eq!(word_tokens.len(), 1);
-        let word_bytes: Vec<u16> = input_to_repeat.bytes().map(|v| v as u16).collect();
-        assert_eq!(word_tokens[&(word_bytes)], n_repeats);
+        assert_eq!(word_tokens[0].1, n_repeats);
 
         // Check another word gets added in ok
         let input_str = format!("hi{input_str}");

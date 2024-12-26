@@ -1,12 +1,14 @@
 use core::str;
+use std::collections::HashSet;
 // This is going to by my tokenizer
 use env_logger;
+
 use log::info;
-use transformer_oxide::tokenizer::tokenizer::bpe_on_file;
+use transformer_oxide::tokenizer::tokenizer::{bpe_on_file, bpe_on_str};
 
 fn main() {
     env_logger::init();
-    let (_, vocab) = bpe_on_file("./data/botchan.txt", 200).unwrap();
+    let (_, vocab) = bpe_on_file("./data/botchan.txt", 1000).unwrap();
 
     let mut vocab_words: Vec<String> = vocab
         .values()
