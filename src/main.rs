@@ -8,6 +8,7 @@ use transformer_oxide::tokenizer::tokenizer::{bpe_on_file, bpe_on_str};
 
 fn main() {
     env_logger::init();
+
     let (_, vocab) = bpe_on_file("./data/botchan.txt", 1000).unwrap();
 
     let mut vocab_words: Vec<String> = vocab
@@ -17,5 +18,9 @@ fn main() {
         .collect();
     vocab_words.sort_by(|slf, other| slf.len().partial_cmp(&other.len()).unwrap());
 
-    info!("{:?}", &vocab_words[..10]);
+    info!("First ten merges: {:?}", &vocab_words[..10]);
+    info!(
+        "Last ten merges: {:?}",
+        &vocab_words[vocab_words.len() - 10..vocab_words.len()]
+    );
 }

@@ -180,7 +180,7 @@ pub fn bpe(
                             // Reduce the count on the pair
                             *(pairs
                                 .get_mut(&replaced_pair)
-                                .expect("This pair must be in there")) -= 1;
+                                .expect("This pair must be in there")) -= *word_occs;
                         }
                     }
                 }
@@ -253,5 +253,5 @@ pub fn decode(encoded: Vec<u16>, vocab: HashMap<u16, Vec<u8>>) -> Result<String>
 }
 
 #[cfg(test)]
-#[path = "./tokenizer_tests.rs"]
+#[path = "./unit_tests/tokenizer_tests.rs"]
 mod tokenizer_tests;
