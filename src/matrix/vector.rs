@@ -41,6 +41,38 @@ impl<const SIZE: usize> FloatVector<SIZE> {
             .map(|(a, b)| a * b)
             .sum()
     }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, f32> {
+        self.elements.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, f32> {
+        self.elements.iter_mut()
+    }
+}
+
+impl<const SIZE: usize> IntoIterator for FloatVector<SIZE> {
+    type Item = f32;
+    type IntoIter = std::array::IntoIter<Self::Item, SIZE>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.elements.into_iter()
+    }
+}
+
+impl<const SIZE: usize> FromIterator<f32> for FloatVector<SIZE> {
+    fn from_iter<I: IntoIterator<Item = f32>>(iter: I) -> Self {
+        let mut ret_elements: [f32; SIZE] =
+            unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+
+        let mut idx: usize = 0;
+        for element in iter {
+            ret_elements[idx] = element;
+            idx += 1;
+        }
+        assert_eq!(idx, SIZE, "The iterator contained {} items, which is incorrect to create a FloatVector of size {}.", idx, SIZE);
+        Self::from_elements(ret_elements)
+    }
 }
 
 impl<'a, 'b, const SIZE: usize> Add<&'b FloatVector<SIZE>> for &'a FloatVector<SIZE> {
@@ -124,5 +156,14 @@ mod tests {
         assert_eq!(&aa - &ab, FloatVector::from_elements([1., 2., 3.]));
         aa -= &ab;
         assert_eq!(aa, FloatVector::from_elements([1., 2., 3.]));
+    }
+
+    #[test]
+    fn test_iter_collect() {
+        const SIZE_A: usize = 3;
+
+        let aa: FloatVector<SIZE_A> = FloatVector::from_elements([1., 2., 3.]);
+        let bb: FloatVector<SIZE_A> = aa.iter().map(|element| element * 2.0).collect();
+        assert_eq!(bb, &aa * 2.0);
     }
 }

@@ -4,11 +4,11 @@ use anyhow::Result;
 
 use crate::{exceptions::MatrixError, matrix::vector::FloatVector};
 
-pub struct Matrix2<const N_COLS: usize, const N_ROWS: usize> {
+pub struct Matrix2<const N_ROWS: usize, const N_COLS: usize> {
     pub rows: [FloatVector<N_COLS>; N_ROWS],
 }
 
-impl<const N_COLS: usize, const N_ROWS: usize> Matrix2<N_COLS, N_ROWS> {
+impl<const N_COLS: usize, const N_ROWS: usize> Matrix2<N_ROWS, N_COLS> {
     pub fn from_rows(rows: [FloatVector<N_COLS>; N_ROWS]) -> Self {
         Matrix2 { rows }
     }
@@ -22,10 +22,10 @@ impl<const N_COLS: usize, const N_ROWS: usize> Matrix2<N_COLS, N_ROWS> {
         Matrix2 { rows }
     }
 
-    pub fn dot(&self, other: &FloatVector<N_COLS>) -> FloatVector<N_COLS> {
-        let mut ret_elements: [f32; N_COLS] =
+    pub fn dot(&self, other: &FloatVector<N_COLS>) -> FloatVector<N_ROWS> {
+        let mut ret_elements: [f32; N_ROWS] =
             unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-        for i in 0..N_COLS {
+        for i in 0..N_ROWS {
             ret_elements[i] = self.rows[i].dot(other);
         }
         FloatVector::from_elements(ret_elements)
