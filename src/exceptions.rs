@@ -7,3 +7,11 @@ pub enum TokenizerError {
     #[error("unknown tokenizer error")]
     Unknown,
 }
+
+#[derive(Error, Debug)]
+pub enum MatrixError {
+    #[error("{0}")]
+    MatrixError(String),
+    #[error("unknown tokenizer error")]
+    Unknown,
+}
