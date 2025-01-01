@@ -1,8 +1,10 @@
-use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
 
 use anyhow::Result;
 
 use crate::exceptions::MatrixError;
+
+use super::matrix::Matrix2;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FloatVector<const SIZE: usize> {
@@ -10,6 +12,10 @@ pub struct FloatVector<const SIZE: usize> {
 }
 
 impl<const SIZE: usize> FloatVector<SIZE> {
+    pub fn new_zeros() -> Self {
+        Self::from_elements([0.; SIZE])
+    }
+
     pub fn from_vector(elements: Vec<f32>) -> Result<FloatVector<SIZE>> {
         Ok(FloatVector {
             elements: elements.try_into().map_err(|_| {
@@ -40,6 +46,23 @@ impl<const SIZE: usize> FloatVector<SIZE> {
             .zip(other.elements.iter())
             .map(|(a, b)| a * b)
             .sum()
+    }
+
+    pub fn outer<const OTHER_SIZE: usize>(
+        &self,
+        other: &FloatVector<OTHER_SIZE>,
+    ) -> Matrix2<SIZE, OTHER_SIZE> {
+        let mut ret_rows: [[f32; OTHER_SIZE]; SIZE] =
+            unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+
+        // let ret_elements: Matrix2<OTHER_SIZE, SIZE> = {}
+        self.elements.iter().enumerate().for_each(|(i, i_element)| {
+            other
+                .iter()
+                .enumerate()
+                .for_each(|(j, j_element)| ret_rows[i][j] = i_element * j_element);
+        });
+        Matrix2::from_elements(ret_rows)
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, f32> {
@@ -117,24 +140,71 @@ impl<const SIZE: usize> SubAssign<&Self> for FloatVector<SIZE> {
     }
 }
 
-impl<const SIZE: usize> Mul<f32> for &FloatVector<SIZE> {
+impl<const SIZE: usize, T> Mul<T> for &FloatVector<SIZE>
+where
+    T: Into<f32> + Copy,
+{
     type Output = FloatVector<SIZE>;
 
-    fn mul(self, other: f32) -> FloatVector<SIZE> {
+    fn mul(self, other: T) -> FloatVector<SIZE> {
         let mut ret_elements: [f32; SIZE] =
             unsafe { std::mem::MaybeUninit::uninit().assume_init() };
         for i in 0..SIZE {
-            ret_elements[i] = self.elements[i] * other
+            ret_elements[i] = self.elements[i] * other.into()
         }
         FloatVector::from_elements(ret_elements)
     }
 }
 
-impl<const SIZE: usize> MulAssign<f32> for FloatVector<SIZE> {
-    fn mul_assign(&mut self, other: f32) {
+impl<const SIZE: usize, T> MulAssign<T> for FloatVector<SIZE>
+where
+    T: Into<f32> + Copy,
+{
+    fn mul_assign(&mut self, other: T) {
         for i in 0..SIZE {
-            self.elements[i] *= other
+            self.elements[i] *= other.into()
         }
+    }
+}
+
+impl<const SIZE: usize, T> Div<T> for &FloatVector<SIZE>
+where
+    T: Into<f32> + Copy,
+{
+    type Output = FloatVector<SIZE>;
+
+    fn div(self, other: T) -> FloatVector<SIZE> {
+        let mut ret_elements: [f32; SIZE] =
+            unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+        for i in 0..SIZE {
+            ret_elements[i] = self.elements[i] / other.into()
+        }
+        FloatVector::from_elements(ret_elements)
+    }
+}
+
+impl<const SIZE: usize, T> DivAssign<T> for FloatVector<SIZE>
+where
+    T: Into<f32> + Copy,
+{
+    fn div_assign(&mut self, other: T) {
+        for i in 0..SIZE {
+            self.elements[i] /= other.into()
+        }
+    }
+}
+
+impl<const SIZE: usize> Index<usize> for FloatVector<SIZE> {
+    type Output = f32;
+
+    fn index(&self, index: usize) -> &f32 {
+        &self.elements[index]
+    }
+}
+
+impl<const SIZE: usize> IndexMut<usize> for FloatVector<SIZE> {
+    fn index_mut(&mut self, index: usize) -> &mut f32 {
+        &mut self.elements[index]
     }
 }
 
