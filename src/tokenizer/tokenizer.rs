@@ -211,28 +211,7 @@ pub fn bpe(
     Ok((merges, vocab))
 }
 
-pub fn encode(input_str: &str, merges: Vec<((u16, u16), u16)>) -> Result<Vec<u16>> {
-    let mut encoded: Vec<u16> = input_str
-        .bytes()
-        .map(|val: u8| -> u16 { val as u16 })
-        .collect();
-
-    for (merge_from, merge_to) in merges {
-        let mut i: usize = 0;
-        while i < (encoded.len() - 1) {
-            if (encoded[i], encoded[i + 1]) == merge_from {
-                encoded[i] = merge_to;
-                encoded.remove(i + 1);
-            } else {
-                i += 1;
-            }
-        }
-    }
-
-    Ok(encoded)
-}
-
-pub fn decode(encoded: Vec<u16>, vocab: HashMap<u16, Vec<u8>>) -> Result<String> {
+pub fn decode(encoded: Vec<u16>, vocab: &HashMap<u16, Vec<u8>>) -> Result<String> {
     let decoded: Vec<u8> = encoded
         .iter()
         .map(|element| {

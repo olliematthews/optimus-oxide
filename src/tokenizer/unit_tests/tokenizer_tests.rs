@@ -1,6 +1,8 @@
 use super::*;
 use std::collections::HashSet;
 mod tests {
+    use crate::tokenizer::encode::{encode, encode_from_merge_tree, vocab_to_merge_tree};
+
     use super::*;
 
     #[test]
@@ -68,7 +70,31 @@ mod tests {
         let (merges, vocab) = bpe_on_str(input_str, 10).unwrap();
         assert_eq!(
             input_str,
-            decode(encode(input_str, merges).unwrap(), vocab).unwrap()
+            decode(encode(input_str, merges).unwrap(), &vocab).unwrap()
         );
+    }
+
+    #[test]
+    fn test_fast_encode() {
+        let input_file = "./data/botchan.txt";
+        // A simple test to make sure that common words get encoded
+        let (merges, vocab) = bpe_on_file(input_file, 100).unwrap();
+
+        let mut input_file_as_str = String::new();
+        File::open(input_file)
+            .unwrap()
+            .read_to_string(&mut input_file_as_str)
+            .unwrap();
+        let encoded = encode(&input_file_as_str, merges.clone()).unwrap();
+
+        let merge_tree = vocab_to_merge_tree(&vocab).unwrap();
+        let fast_encoded = encode_from_merge_tree(&input_file_as_str, merge_tree).unwrap();
+        let decoded = decode(encoded.clone(), &vocab).unwrap();
+        assert_eq!(decoded, input_file_as_str);
+
+        let n_test = 40;
+        println!("Encoded: {:?}", &encoded[..n_test]);
+        println!("FastEncoded: {:?}", &fast_encoded[..n_test]);
+        assert!(encoded[..n_test] == fast_encoded[..n_test]);
     }
 }
